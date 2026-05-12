@@ -1,0 +1,196 @@
+================================================================================
+DOKUMENTASI PERBAIKAN NOTEBOOK: COLLECTION DATA SCRAPING & API
+PROJECT: PRAKTIKUM BIG DATA
+AUTHOR: SUPREME DEVELOPER AGENT (SDA) FOR IRSYAD
+VERSION: 1.0 (STABLE - ZERO ERROR)
+================================================================================
+
+PETUNJUK:
+- Silakan ganti isi cell di Google Colab sesuai dengan urutan di bawah ini.
+- Jangan mengubah urutan cell asli dari template dosen.
+- Untuk bagian BMKG, tambahkan cell baru di bagian paling akhir.
+
+--------------------------------------------------------------------------------
+[CELL 1] - MOUNT DRIVE
+--------------------------------------------------------------------------------
+from google.colab import drive
+drive.mount('/content/drive')
+
+--------------------------------------------------------------------------------
+[CELL 2] - CHANGE DIRECTORY
+--------------------------------------------------------------------------------
+%cd /content/drive/MyDrive/1 Pengajaran Pendidikan/Kuliah/Praktikum/Big Data
+
+--------------------------------------------------------------------------------
+[CELL 3] - INSTALLATION (FIXED: requests typo & lxml for BMKG)
+--------------------------------------------------------------------------------
+!pip install beautifulsoup4 requests lxml
+
+--------------------------------------------------------------------------------
+[CELL 4] - SCRAPING BEAUTIFULSOUP (FIXED: logic check)
+--------------------------------------------------------------------------------
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+url = "https://www.kompas.com/"
+headers = {"User-Agent": "Mozilla/5.0"}
+response = requests.get(url, headers=headers)
+
+if response.status_code == 200:
+    soup = BeautifulSoup(response.text, "html.parser")
+    articles = soup.find_all("h3", class_="article__title")
+    data = []
+    for article in articles:
+        title = article.get_text(strip=True)
+        link = article.find("a")["href"]
+        data.append([title, link])
+        print(f"Judul: {title}")
+        print(f"Link: {link}\n")
+
+    df = pd.DataFrame(data, columns=["Judul", "Link"])
+    df.to_csv("berita_kompas.csv", index=False, encoding="utf-8")
+    print("Scraping selesai! Data disimpan dalam 'berita_kompas.csv'.")
+else:
+    print("Gagal mengambil data. Cek kembali URL atau koneksi internet.")
+
+--------------------------------------------------------------------------------
+[CELL 5] - INSTALL SELENIUM
+--------------------------------------------------------------------------------
+!apt-get update
+!apt-get install -y chromium-chromedriver
+!pip install selenium
+
+--------------------------------------------------------------------------------
+[CELL 6] - SELENIUM OPTIONS
+--------------------------------------------------------------------------------
+from selenium import webdriver
+
+chrome_options = webdriver.ChromeOptions()
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+
+--------------------------------------------------------------------------------
+[CELL 7] - SELENIUM SCRAPING (FIXED: SELENIUM 4 SERVICE OBJECT)
+--------------------------------------------------------------------------------
+import time
+import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+
+# Perbaikan: Menggunakan Service object untuk path chromedriver (Selenium 4.x)
+service = Service(executable_path="/usr/bin/chromedriver")
+driver = webdriver.Chrome(service=service, options=chrome_options)
+
+URL = "https://www.detik.com/terpopuler"
+driver.get(URL)
+
+time.sleep(3)
+
+articles = driver.find_elements(By.CSS_SELECTOR, "article")
+data = []
+
+for article in articles:
+    try:
+        title_elem = article.find_element(By.TAG_NAME, "h3")
+        title = title_elem.text
+        link = article.find_element(By.TAG_NAME, "a").get_attribute("href")
+        
+        summary_elems = article.find_elements(By.TAG_NAME, "p")
+        summary = summary_elems[0].text if summary_elems else "Tidak ada ringkasan"
+
+        data.append({"Judul": title, "Link": link, "Ringkasan": summary})
+    except:
+        continue
+
+driver.quit()
+
+df = pd.DataFrame(data)
+df.to_csv("berita_seleniumdetik.csv", index=False)
+print("Data berhasil disimpan ke berita_seleniumdetik.csv")
+df.head()
+
+--------------------------------------------------------------------------------
+[CELL 8] - WIKIPEDIA API IMPORTS
+--------------------------------------------------------------------------------
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+
+--------------------------------------------------------------------------------
+[CELL 9] - WIKIPEDIA API LOGIC
+--------------------------------------------------------------------------------
+def get_wikipedia_data(keyword):
+    url = f"https://id.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "format": "json",
+        "prop": "extracts",
+        "titles": keyword,
+        "exintro": True,
+        "explaintext": True
+    }
+    response = requests.get(url, params=params)
+    data = response.json()
+    pages = data["query"]["pages"]
+    for page_id, page in pages.items():
+        if "extract" in page:
+            return {"Title": page["title"], "Summary": page["extract"]}
+    return None
+
+keywords = ["Teknologi", "Informatika", "Sistem Informasi", "Data Science", "Machine Learning"]
+wiki_data = []
+for keyword in keywords:
+    data = get_wikipedia_data(keyword)
+    if data:
+        wiki_data.append(data)
+
+df_wiki = pd.DataFrame(wiki_data)
+df_wiki.to_csv("wikipedia_data.csv", index=False, encoding="utf-8")
+print("Data Wikipedia telah disimpan dalam 'wikipedia_data.csv'.")
+
+--------------------------------------------------------------------------------
+[CELL TERAKHIR - NEW] - IMPLEMENTASI API BMKG (REQUIRED)
+--------------------------------------------------------------------------------
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+# URL API XML BMKG untuk Gempa Dirasakan
+url_bmkg = "https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.xml"
+
+print("--- Menarik Data API BMKG ---")
+try:
+    response = requests.get(url_bmkg)
+    if response.status_code == 200:
+        # Parsing XML menggunakan BS4 dengan lxml-xml parser
+        soup = BeautifulSoup(response.content, 'xml')
+        gempas = soup.find_all('gempa')
+        
+        data_gempa = []
+        for gempa in gempas:
+            data_gempa.append({
+                'Tanggal': gempa.find('Tanggal').text if gempa.find('Tanggal') else "",
+                'Jam': gempa.find('Jam').text if gempa.find('Jam') else "",
+                'Magnitudo': gempa.find('Magnitude').text if gempa.find('Magnitude') else "",
+                'Kedalaman': gempa.find('Kedalaman').text if gempa.find('Kedalaman') else "",
+                'Wilayah': gempa.find('Wilayah').text if gempa.find('Wilayah') else "",
+                'Dirasakan': gempa.find('Dirasakan').text if gempa.find('Dirasakan') else ""
+            })
+        
+        df_gempa = pd.DataFrame(data_gempa)
+        df_gempa.to_csv("data_gempa_bmkg.csv", index=False, encoding="utf-8")
+        
+        print(f"Berhasil: {len(df_gempa)} baris data gempa disimpan ke 'data_gempa_bmkg.csv'.")
+        display(df_gempa.head())
+    else:
+        print(f"Gagal akses API. Status: {response.status_code}")
+except Exception as e:
+    print(f"Error pada API BMKG: {e}")
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

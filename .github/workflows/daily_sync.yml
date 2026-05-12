@@ -1,0 +1,29 @@
+name: VisionSafe Daily Data Sync
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 00:00 UTC / 07:00 WIB
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Data Ingestion
+        env:
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
+        run: python data_ingestion.py
