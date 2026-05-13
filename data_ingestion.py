@@ -9,9 +9,6 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 import time
 
-# ==============================================================================
-# VISIONSAFE ABSOLUTE KNOWLEDGE ENGINE (SDA ELITE V7.0 - GITHUB EDITION)
-# ==============================================================================
 
 class VisionSafeEliteIngestor:
     def __init__(self):
