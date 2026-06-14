@@ -121,7 +121,25 @@ class VisionSafeEliteIngestor:
                 if config["type"] == "rss":
                     feed = feedparser.parse(config["url"])
                     # ambil maksimal 30 berita terbaru aja biar nggak kelamaan
-                    entries = feed.entries[:30]
+                    # Ambil artikel dengan rentang waktu 1 jam terakhir (Real-time update)
+                    from time import mktime
+                    import datetime
+                    
+                    entries = []
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    time_range_hours = 1 # Hanya ngambil 1 jam terakhir
+
+                    for entry in feed.entries:
+                        if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                            dt_published = datetime.datetime.fromtimestamp(mktime(entry.published_parsed), tz=datetime.timezone.utc)
+                            if (now - dt_published).total_seconds() <= (time_range_hours * 3600):
+                                entries.append(entry)
+                        else:
+                            # Jika tidak ada tanggal pasti, asumsikan baru (atau lewatkan)
+                            entries.append(entry)
+                    
+                    # Batasi tetap 30 agar tidak over-quota
+                    entries = entries[:30]
                     
                     for entry in entries:
                         stats["total_scanned"] += 1
