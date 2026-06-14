@@ -123,15 +123,15 @@ class VisionSafeEliteIngestor:
                     # ambil maksimal 30 berita terbaru aja biar nggak kelamaan
                     # Ambil artikel dengan rentang waktu 1 jam terakhir (Real-time update)
                     from time import mktime
-                    import datetime
+                    import datetime as dt
                     
                     entries = []
-                    now = datetime.datetime.now(datetime.timezone.utc)
+                    now = dt.datetime.now(dt.timezone.utc)
                     time_range_hours = 1 # Hanya ngambil 1 jam terakhir
 
                     for entry in feed.entries:
                         if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                            dt_published = datetime.datetime.fromtimestamp(mktime(entry.published_parsed), tz=datetime.timezone.utc)
+                            dt_published = dt.datetime.fromtimestamp(mktime(entry.published_parsed), tz=dt.timezone.utc)
                             if (now - dt_published).total_seconds() <= (time_range_hours * 3600):
                                 entries.append(entry)
                         else:
