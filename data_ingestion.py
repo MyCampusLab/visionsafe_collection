@@ -9,86 +9,74 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 import time
 
-
 class VisionSafeEliteIngestor:
     def __init__(self):
-        # panggil fungsi login firebase saat pertama kali jalan
+        # 1. panggil fungsi login firebase pas pertama kali script jalan
         self.db = self._init_firebase()
-        # nama tempat simpan data di firestore
+        # 2. nama tabel/koleksi di database firestore buat nyimpen semua data
         self.collection_name = "visionsafe_knowledge"
-        # identitas program biar nggak diblokir website berita
+        # 3. nyamar jadi browser beneran biar pas narik data gak diblokir sama website beritanya
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        # kata kunci wajib agar data yang diambil cuma soal mata
+        # 4. kamus keyword filter. kalo berita gak ada unsur kata-kata ini, langsung kita buang
         self.eye_keywords = [
             'eye', 'vision', 'blindness', 'myopia', 'glaucoma', 'retina', 'sight', 'screen time', 
             'mata', 'penglihatan', 'rabun', 'miopia', 'katarak', 'gadget', 'kacamata', 'ophthalmology'
         ]
 
     def _init_firebase(self):
-        """fungsi untuk login ke firebase pake config rahasia di github"""
-        # ambil data config dari secret github actions
+        """fungsi buat ngonek ke server firebase. password dan config ditaruh di github secrets biar aman"""
         firebase_config_raw = os.environ.get("FIREBASE_CONFIG")
         if not firebase_config_raw:
-            # kalau config nggak ada, program berhenti biar nggak error jauh
-            raise ValueError("Environment variable FIREBASE_CONFIG is missing.")
+            raise ValueError("waduh, environment variable FIREBASE_CONFIG ilang nih.")
         
         try:
             # ubah teks config jadi format json (dictionary)
             config_dict = json.loads(firebase_config_raw)
-            # cek kalau firebase belum nyala, baru nyalain
+            # ngecek kalo firebase belum jalan, baru kita nyalain
             if not firebase_admin._apps:
                 cred = credentials.Certificate(config_dict)
                 firebase_admin.initialize_app(cred)
-            # balikkan akses ke firestore database
             return firestore.client()
         except Exception as e:
-            # kalau login gagal, kasih tau errornya apa
-            print(f"Error initializing Firebase: {e}")
+            print(f"gagal login ke firebase bro: {e}")
             raise
 
     def generate_id(self, url):
-        """bikin id unik dari link biar nggak ada data double di database"""
-        # pake sha256 biar link yang sama selalu dapet id yang sama
+        """fungsi hashing sha-256: bikin id unik dari link web biar gak ada berita yang masuk dobel"""
         return hashlib.sha256(url.encode('utf-8')).hexdigest()
 
     def is_eye_related(self, text):
-        """filter cerdas biar berita yang nggak nyambung nggak masuk"""
+        """fungsi filter pinter. kalo teksnya murni ngomongin mata, balikin true."""
         if not text: return False
-        # jadiin huruf kecil semua biar pencariannya gampang
         text_lower = text.lower()
-        # cek apakah ada salah satu keyword mata di dalam teks
         return any(keyword in text_lower for keyword in self.eye_keywords)
 
     def extract_full_content(self, url):
-        """fungsi buat ambil isi lengkap berita dan buang iklannya"""
+        """fungsi brutal buat ngambil isi tulisan penuh dari web dan ngebuang iklannya"""
         try:
-            # buka link beritanya, maksimal tunggu 15 detik
             response = requests.get(url, headers=self.headers, timeout=15)
-            # baca struktur html websitenya pake lxml biar cepet
             soup = BeautifulSoup(response.text, 'lxml')
             
-            # buang bagian yang nggak penting kayak menu, footer, sama iklan
+            # basmi elemen sampah kayak menu, footer, iframe, dan script js
             for element in soup(["script", "style", "nav", "header", "footer", "aside", "form", "iframe"]):
                 element.decompose()
 
-            # ambil semua teks yang ada di dalam tag paragraf <p>
+            # comot teks dari tag <p> aja
             paragraphs = soup.find_all('p')
-            # gabungkan semua paragraf jadi satu teks panjang
             content = " ".join([p.get_text() for p in paragraphs])
-            # bersihkan spasi-spasi yang berantakan
+            # bersihin spasi berlebih
             content = " ".join(content.split())
             
-            # kalau teksnya terlalu pendek (kurang dari 300 huruf), anggep beritanya nggak valid
+            # kalo teksnya kedikitan (kurang dari 300 huruf), anggep itu bukan artikel beneran
             return content if len(content) > 300 else None
         except Exception as e:
-            # kalau gagal ambil isi berita, kasih tau errornya
-            print(f"Extraction failed for {url}: {e}")
+            print(f"gagal narik konten dari {url}: {e}")
             return None
 
     def get_data_sources(self):
-        """daftar sumber berita resmi yang bakal dipantau tiap hari"""
+        """daftar target sumber berita. bisa ditambahin terus kedepannya"""
         return {
             "NIH National Eye Institute": {"url": "https://www.nei.nih.gov/about/news-and-events/news/feed", "type": "rss", "filter": False},
             "WHO Global News": {"url": "https://www.who.int/rss-feeds/news-english.xml", "type": "rss", "filter": True},
@@ -100,12 +88,11 @@ class VisionSafeEliteIngestor:
         }
 
     def run(self):
-        """mesin utama buat jalanin proses pengambilan data"""
-        print(f"--- VisionSafe Data Ingestion Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
-        # ambil list sumber berita
+        """mesin utama yang bakal dijalanin sama github actions"""
+        print(f"--- mulai gas narik data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
         sources = self.get_data_sources()
         
-        # wadah buat nyatet hasil kerja hari ini
+        # log catatan kerja
         stats = {
             "total_scanned": 0,
             "total_new": 0,
@@ -113,57 +100,38 @@ class VisionSafeEliteIngestor:
             "errors": 0
         }
         
-        # muter ke tiap sumber berita satu per satu
         for name, config in sources.items():
-            print(f"\n[Source] {name}")
+            print(f"\n[target: {name}]")
             try:
-                # kalau tipenya RSS, pake feedparser buat bacanya
                 if config["type"] == "rss":
+                    # parse rss feed-nya
                     feed = feedparser.parse(config["url"])
-                    # ambil maksimal 30 berita terbaru aja biar nggak kelamaan
-                    # Ambil artikel dengan rentang waktu 1 jam terakhir (Real-time update)
-                    from time import mktime
-                    import datetime as dt
                     
-                    entries = []
-                    now = dt.datetime.now(dt.timezone.utc)
-                    time_range_hours = 1 # Hanya ngambil 1 jam terakhir
-
-                    for entry in feed.entries:
-                        if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                            dt_published = dt.datetime.fromtimestamp(mktime(entry.published_parsed), tz=dt.timezone.utc)
-                            if (now - dt_published).total_seconds() <= (time_range_hours * 3600):
-                                entries.append(entry)
-                        else:
-                            # Jika tidak ada tanggal pasti, asumsikan baru (atau lewatkan)
-                            entries.append(entry)
-                    
-                    # Batasi tetap 30 agar tidak over-quota
-                    entries = entries[:30]
+                    # sikat semua berita dari feed tanpa batasan waktu dan jumlah
+                    # murni konsep big data: tarik semua, nanti urusan duplikat di-handle firebase
+                    entries = feed.entries
                     
                     for entry in entries:
                         stats["total_scanned"] += 1
                         url = entry.link
                         title = entry.title
                         
-                        # kalau sumbernya umum, cek dulu relevansinya soal mata
+                        # filter topik buat sumber web yang campur-campur (misal: who atau kemenkes)
                         if config["filter"]:
                             combined_text = title + " " + (entry.summary if hasattr(entry, 'summary') else "")
                             if not self.is_eye_related(combined_text):
                                 stats["total_skipped"] += 1
                                 continue
                         
-                        # bikin id unik buat link ini
+                        # ngecek ke database firestore pake hash id. kalo udah ada, skip aja.
                         doc_id = self.generate_id(url)
-                        # cek ke database, link ini udah ada apa belum
                         doc_ref = self.db.collection(self.collection_name).document(doc_id)
                         
-                        # kalau link belum ada di database, proses simpan
                         if not doc_ref.get().exists:
-                            # ambil isi lengkap beritanya
+                            # kalo belum ada di db, gass eksekusi ambil full teksnya
                             content = self.extract_full_content(url)
                             if content:
-                                # susun data yang mau dikirim ke firebase
+                                # rakit json datanya buat dikirim ke cloud
                                 payload = {
                                     "title": title,
                                     "url": url,
@@ -175,32 +143,29 @@ class VisionSafeEliteIngestor:
                                     "content_length": len(content),
                                     "fingerprint": doc_id
                                 }
-                                # simpan ke koleksi visionsafe_knowledge
+                                # push ke firestore
                                 doc_ref.set(payload)
-                                # catat kalau dapet data baru
                                 stats["total_new"] += 1
-                                print(f"  [NEW] {title}")
-                                # kasih jeda 1 detik biar nggak dianggap serangan ddos
+                                print(f"  [data baru dapet nih] {title}")
+                                # jeda sopan santun 1 detik biar ip github gak diblokir karena dikira ddos
                                 time.sleep(1)
                         else:
-                            # kalau udah ada, lewati aja
+                            # kalo udah ada di database (hasil scraping 15 menit lalu), lewatin
                             stats["total_skipped"] += 1
                             
             except Exception as e:
-                # catat kalau ada error pas proses sumber berita tertentu
-                print(f"  [ERROR] {name}: {e}")
+                print(f"  [ada yang error nih bro dari {name}]: {e}")
                 stats["errors"] += 1
                 continue
 
-        # munculin ringkasan hasil kerja hari ini di log github
-        print("\n--- Ingestion Summary ---")
-        print(f"Total Scanned : {stats['total_scanned']}")
-        print(f"Total New     : {stats['total_new']}")
-        print(f"Total Skipped : {stats['total_skipped']}")
-        print(f"Errors Found  : {stats['errors']}")
-        print(f"Finished at   : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # rekap hasil nambang hari ini
+        print("\n--- rekap data hari ini ---")
+        print(f"total dicek  : {stats['total_scanned']}")
+        print(f"data baru    : {stats['total_new']}")
+        print(f"data dilewat : {stats['total_skipped']}")
+        print(f"jumlah error : {stats['errors']}")
+        print(f"kelar jam    : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-# pemicu utama biar program jalan
 if __name__ == "__main__":
     ingestor = VisionSafeEliteIngestor()
     ingestor.run()
